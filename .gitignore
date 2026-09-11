@@ -1,0 +1,22 @@
+# Vivado and simulator generated files
+.Xil/
+*.jou
+*.log
+*.str
+*.pb
+*.wdb
+*.wcfg
+vivado_*.backup.*
+xsim.dir/
+*.sim/
+*.runs/
+*.gen/
+*.srcs/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+
+# Local editor files
+.vscode/
+.idea/
