@@ -11,6 +11,9 @@ FPGA 내부에서 180개의 affine Q24 투영 계수로 변환합니다. PYNQ에
 이 디렉토리는 독립적인 Vivado IP 저장소로 사용할 수 있도록 구성되어
 있습니다.
 
+기여자 및 AI 개발 지원 내역은 [CONTRIBUTORS.md](CONTRIBUTORS.md)에서
+확인할 수 있습니다.
+
 ## 공개 범위
 
 포함 항목:
