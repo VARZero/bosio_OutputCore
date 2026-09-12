@@ -22,6 +22,8 @@ Codex(GPT-6 Astra, GPT-5.6 Sol/Luna)를 이용하여 완성해봤습니다.
 아무쪼록 관심있게 봐주시면 감사하겠습니다. (꾸벅)
 
 ## 아래부터 본문.
+# BOSIO 출력 코어
+
 정이십면체 기반 삼각형 프레임버퍼를 위한 AXI 기반 RTL 출력 코어입니다.
 출력 픽셀마다 정이십면체상의 방향을 계산하고, 해당하는 면·7-7-7-8 타일·
 삼각형 셀을 선택한 뒤, 장면 캐시에서 색상을 읽어 RGB 영상으로 출력합니다.
@@ -121,7 +123,17 @@ AXI 마스터는 외부 DDR의 패킹된 장면을 32비트 데이터와 16-beat
 포함한 최대 장면 전송 크기는 53,632워드입니다.
 
 새 장면은 현재 사용하지 않는 BRAM bank로 수신한 뒤 프레임 경계에서 교체됩니다.
-따라서 화면 중간에 장면이 부분적으로 바뀌지 않습니다.
+교체 후 같은 장면을 이전 bank에도 복제하므로 두 bank는 다음 부분 갱신의 동일한
+기준 장면을 유지합니다. `BPT1` 패치는 기존 directory offset을 사용하는 타일만
+비활성 bank에 기록하고 프레임 경계에서 교체한 다음 이전 bank에도 재적용합니다.
+따라서 전체 장면과 부분 갱신 모두 화면 중간에 바뀌지 않습니다.
+
+부분 갱신 패킷은 16워드 정렬 형식입니다. 파일 헤더 16워드 뒤에 타일마다
+16워드 record header와 `M*M/4`개의 payload word가 옵니다. 파일 헤더의 word
+0은 `0x42505431`(`BPT1`), word 1은 타일당 payload word 수, word 2는 record 수,
+word 3은 전체 word 수입니다. record header의 word 0은 셀 데이터 RAM의 word
+offset이고 word 1은 진단용 global tile ID입니다. 타일 활성 여부나 directory
+배치가 달라질 때는 전체 장면을 다시 올려야 합니다.
 
 RGB 장면을 이 형식으로 만드는 방법은 이 코어가 정의하지 않습니다. 외부
 장면 생성기가 팔레트·디렉터리·셀 데이터를 생성해야 합니다.
@@ -222,11 +234,11 @@ true로 보일 수 있습니다. 소프트웨어는 busy가 잠깐 false가 되�
 | `0x60` | R/W | 수동 계수 write index |
 | `0x64` | W | 수동 계수 data; 기록 후 index 증가 |
 | `0x68` | W | bit 0: 수동 계수 commit |
-| `0x6c` | W | bit 0: 장면 DMA fetch 요청 |
+| `0x6c` | W | bit 0: 전체 장면 DMA 요청, bit 1: `BPT1` 부분 타일 요청 |
 | `0x70` | R | 수신 DMA word count |
 | `0x74` | R | 캐시 용량(바이트), `196608` |
 | `0x78` | R/W | write bit 0: 센서 모드 enable; read bit 1 sensor active, bit 2 pose engine busy, bit 31:16 마지막 적용 packet ID 하위 16비트 |
-| `0x7c` | R | bitstream signature `0x42533232` |
+| `0x7c` | R | bitstream signature `0x42533233` (`BS23`) |
 
 센서 모드가 켜져 있으면 수동 계수 commit은 무시됩니다. 수동 자세를
 설정하려면 먼저 센서 모드를 끄십시오.
@@ -290,15 +302,21 @@ PYNQ-Z2 참조 빌드는 100 MHz에서 다음 결과를 얻었습니다.
 
 | 자원 | 사용량 |
 |---|---:|
-| LUT | 23,853 (44.84%) |
-| Register | 23,124 (21.73%) |
+| LUT (logic + distributed memory) | 25,795 (48.49%) |
+| LUT as logic | 22,003 (41.36%) |
+| Register | 24,472 (23.00%) |
 | BRAM tile | 137.5 / 140 (98.21%) |
-| DSP | 78 (35.45%) |
-| WNS / WHS | +0.086 ns / +0.021 ns |
+| DSP | 83 (37.73%) |
+| WNS / WHS | +0.060 ns / +0.051 ns |
 
-921,600픽셀 AXI/backpressure 시스템 테스트와 5개 자세의 raw sensor 계수
-테스트를 통과했습니다. 위 수치는 참조 Zynq-7020 구현 결과이며, 다른 FPGA나
-파라미터를 사용할 때는 다시 합성·검증해야 합니다.
+921,600픽셀 AXI/backpressure 시스템 테스트, 5개 자세의 raw sensor 계수
+테스트, 전체 장면 이후 부분 패치를 두 cache bank에 적용하는 RTL 테스트를
+통과했습니다. 위 수치는 부분 타일 갱신 RTL을 포함한 참조 Zynq-7020 구현
+결과이며, 다른 FPGA나 파라미터를 사용할 때는 다시 합성·검증해야 합니다.
+
+부분 갱신 회귀 테스트는 `verification/tb_partial_tile_cache.v`에 있습니다.
+이 테스트는 전체 장면을 두 bank에 복제한 뒤 `BPT1` 패치를 교체·재적용하고,
+두 bank의 동일한 셀 값과 DMA 수신 워드 수를 확인합니다.
 
 ## 알려진 제한사항
 
@@ -314,6 +332,6 @@ PYNQ-Z2 참조 빌드는 100 MHz에서 다음 결과를 얻었습니다.
 
 ## 버전 관리
 
-현재 패키지 버전은 `1.0`, core revision은 `23`, runtime signature는
-`0x42533232`입니다. 레지스터 ABI, 장면 메모리 형식, 센서 패킷 형식을
+현재 패키지 버전은 `1.0`, core revision은 `24`, runtime signature는
+`0x42533233`입니다. 레지스터 ABI, 장면 메모리 형식, 센서 패킷 형식을
 변경할 때는 패키지 revision을 올리고 이 README에 변경 내용을 기록하십시오.

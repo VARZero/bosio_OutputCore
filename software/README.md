@@ -77,7 +77,9 @@ driver.upload_words(words)
 
 ## 코어 호환성
 
-드라이버는 bitstream signature `0x42533232`를 확인합니다. 다른 core
+드라이버는 bitstream signature `0x42533233`을 확인합니다. `upload_patch()`는
+윈도우 합성기가 만든 `BPT1` 타일 패킷을 양쪽 BRAM bank에 원자적으로 적용합니다.
+다른 core
 revision이나 다른 레지스터 ABI를 사용할 때는 드라이버의 signature 검사와
 레지스터 정의를 함께 갱신해야 합니다.
 

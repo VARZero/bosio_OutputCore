@@ -17,7 +17,7 @@ class BosioV2:
   if abs(self.clock_mhz-100)>0.1:raise RuntimeError(f'Unexpected FCLK0 {self.clock_mhz}')
   time.sleep(.05)
   self.core=self.overlay.output_core_0
-  if self.core.read(0x7c)!=0x42533232:raise RuntimeError('Wrong bitstream: sensor-pose v2 required')
+  if self.core.read(0x7c)!=0x42533233:raise RuntimeError('Wrong bitstream: BS23 partial-tile core required')
   self.m=m;self.allocate=pynq.allocate;self.buffer=None;self.running=False
   self.core.write(0x5c,{8:0,16:1,32:2}[m]);self.core.write(0x78,0)
  def status(self):
@@ -56,7 +56,12 @@ class BosioV2:
   self.core.write(0x20,value)
   return value
  def upload(self,rgb):
-  scene,count=pack_scene(rgb,self.m);self.upload_words(scene);return count
+  try:
+   from bosio_native_compositor import pack_scene as native_pack_scene
+   scene,count=native_pack_scene(rgb,self.m)
+  except OSError:
+   scene,count=pack_scene(rgb,self.m)
+  self.upload_words(scene);return count
  def upload_words(self,scene):
   scene=np.asarray(scene,dtype=np.uint32)
   self._wait(lambda s:not s['dma_busy'])
@@ -69,6 +74,23 @@ class BosioV2:
   # Wait for transfer to finish; disabled core cannot perform the frame swap yet.
   self._wait(lambda s:((s['received']-before)&0xffffffff)>=len(scene) and (s['scene_pending'] or not s['dma_busy']))
   if self.running:self._wait(lambda s:not s['dma_busy'])
+
+ def upload_patch(self,patch):
+  """Apply a BPT1 tile patch atomically to both cache banks (ABI BS23)."""
+  patch=np.asarray(patch,dtype=np.uint32)
+  if not len(patch):return 0
+  if self.core.read(0x7c)!=0x42533233:raise RuntimeError('Output core does not support partial tile updates')
+  if len(patch)%16 or int(patch[0])!=0x42505431:raise ValueError('Invalid BPT1 patch packet')
+  self._wait(lambda s:not s['dma_busy'])
+  if self.buffer is None or len(self.buffer)<len(patch):
+   if self.buffer is not None:self.buffer.freebuffer()
+   self.buffer=self.allocate(shape=(len(patch),),dtype=np.uint32)
+  self.buffer[:len(patch)]=patch;self.buffer.flush()
+  before=self.core.read(0x70)
+  self.core.write(8,self.buffer.physical_address);self.core.write(12,len(patch));self.core.write(0x6c,2)
+  self._wait(lambda s:((s['received']-before)&0xffffffff)>=len(patch) and (s['scene_pending'] or not s['dma_busy']))
+  if self.running:self._wait(lambda s:not s['dma_busy'])
+  return int(patch[2])
  def start(self):
   self.core.write(0,1);self.running=True
   self._wait(lambda s:s['scene_valid'] and not s['pose_pending'])

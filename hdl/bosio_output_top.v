@@ -90,7 +90,7 @@ module bosio_output_top #(
 );
 
  // Version 2 register ABI. All scene/camera mutations are staged.
- reg enabled,pose_pending,scene_request,sensor_mode;reg [1:0] resolution;
+ reg enabled,pose_pending,scene_request,patch_request,sensor_mode;reg [1:0] resolution;
  reg [2:0] sensor_invert;
  reg [31:0] scene_base,scene_words;reg [7:0] cfg_index;
  reg awgot,wgot,bvalid,rvalid;reg [6:0] awaddr;reg [31:0] wdata,rdata;reg [3:0] wstrb;
@@ -119,9 +119,9 @@ module bosio_output_top #(
   if(!aresetn)begin
    enabled<=0;resolution<=1;scene_base<=0;scene_words<=0;cfg_index<=0;sensor_mode<=0;sensor_invert<=0;
    awgot<=0;wgot<=0;bvalid<=0;rvalid<=0;rdata<=0;awaddr<=0;wdata<=0;wstrb<=0;
-   pose_pending<=0;scene_request<=0;
+   pose_pending<=0;scene_request<=0;patch_request<=0;
   end else begin
-   scene_request<=0;
+   scene_request<=0;patch_request<=0;
    if(cfg_ack&&!sensor_mode)pose_pending<=0;
    if(s_axi_lite_awready&&s_axi_lite_awvalid)begin awgot<=1;awaddr<=s_axi_lite_awaddr;end
    if(s_axi_lite_wready&&s_axi_lite_wvalid)begin wgot<=1;wdata<=s_axi_lite_wdata;wstrb<=s_axi_lite_wstrb;end
@@ -138,7 +138,7 @@ module bosio_output_top #(
      7'h60:cfg_index<=wdata[7:0];
      7'h64:if(cfg_index<179)cfg_index<=cfg_index+1'b1;
      7'h68:if(wdata[0]&&!sensor_mode)pose_pending<=1;
-     7'h6c:if(wdata[0])scene_request<=1;
+     7'h6c:begin if(wdata[0])scene_request<=1;if(wdata[1])patch_request<=1;end
      7'h78:begin sensor_mode<=wdata[0];if(wdata[0])pose_pending<=0;end
      default:;
     endcase
@@ -159,7 +159,7 @@ module bosio_output_top #(
      7'h70:rdata<=received;
      7'h74:rdata<=196608;
      7'h78:rdata<={sensor_applied_count[15:0],13'b0,sensor_pose_busy,sensor_active,sensor_mode};
-     7'h7c:rdata<=32'h42533232;
+     7'h7c:rdata<=32'h42533233;
      default:rdata<=0;
     endcase
    end
@@ -181,7 +181,7 @@ module bosio_output_top #(
   .valid(v0),.face(f0),.n0(n0),.n2(n2),.den(den),.cell_resolution(res0));
  bosio_v2_normalize u_normalize(.clk(aclk),.rst_n(aresetn),.iv(v0),.iface(f0),.ires(res0),.a(n0),.c(n2),.d(den),.ov(v1),.oface(f1),.ores(res1),.l0(l0),.l2(l2));
  bosio_v2_tile_address u_address(.clk(aclk),.rst_n(aresetn),.iv(v1),.iface(f1),.ires(res1),.l0(l0),.l2(l2),.ov(v2),.directory_addr(directory_addr),.cell_addr(cell_addr));
- bosio_v2_cache u_cache(.clk(aclk),.rst_n(aresetn),.request(scene_request),.base(scene_base),.word_count(scene_words),
+ bosio_v2_cache u_cache(.clk(aclk),.rst_n(aresetn),.request(scene_request),.patch_request(patch_request),.base(scene_base),.word_count(scene_words),
   .frame_start(frame_start),.scene_valid(scene_valid),.pending(scene_pending),.busy(cache_busy),.error(cache_error),.received(received),
   .araddr(m_axi_araddr),.arlen(m_axi_arlen),.arvalid(m_axi_arvalid),.arready(m_axi_arready),.rdata(m_axi_rdata),.rresp(m_axi_rresp),.rlast(m_axi_rlast),.rvalid(m_axi_rvalid),.rready(m_axi_rready),
   .sample_valid(v2),.directory_addr(directory_addr),.cell_addr(cell_addr),.pixel_valid(pv),.pixel(pixel));
