@@ -91,6 +91,7 @@ module bosio_output_top #(
 
  // Version 2 register ABI. All scene/camera mutations are staged.
  reg enabled,pose_pending,scene_request,sensor_mode;reg [1:0] resolution;
+ reg [2:0] sensor_invert;
  reg [31:0] scene_base,scene_words;reg [7:0] cfg_index;
  reg awgot,wgot,bvalid,rvalid;reg [6:0] awaddr;reg [31:0] wdata,rdata;reg [3:0] wstrb;
  wire write_fire=awgot&&wgot&&!bvalid;
@@ -99,6 +100,9 @@ module bosio_output_top #(
  wire [31:0] received;
  wire [15:0] frame_counter;
  wire [31:0] sensor_yaw,sensor_pitch,sensor_roll,sensor_packets;wire sensor_active;
+ wire signed [31:0] sensor_yaw_adjusted = sensor_invert[0] ? -$signed(sensor_yaw) : $signed(sensor_yaw);
+ wire signed [31:0] sensor_pitch_adjusted = sensor_invert[1] ? -$signed(sensor_pitch) : $signed(sensor_pitch);
+ wire signed [31:0] sensor_roll_adjusted = sensor_invert[2] ? -$signed(sensor_roll) : $signed(sensor_roll);
  wire sensor_pose_we,sensor_pose_commit,sensor_pose_busy;
  wire [7:0] sensor_pose_idx;wire signed [31:0] sensor_pose_data;
  wire [31:0] sensor_applied_count;
@@ -113,7 +117,7 @@ module bosio_output_top #(
  assign s_axi_lite_rvalid=rvalid;assign s_axi_lite_rdata=rdata;assign s_axi_lite_rresp=0;
  always @(posedge aclk)begin
   if(!aresetn)begin
-   enabled<=0;resolution<=1;scene_base<=0;scene_words<=0;cfg_index<=0;sensor_mode<=0;
+   enabled<=0;resolution<=1;scene_base<=0;scene_words<=0;cfg_index<=0;sensor_mode<=0;sensor_invert<=0;
    awgot<=0;wgot<=0;bvalid<=0;rvalid<=0;rdata<=0;awaddr<=0;wdata<=0;wstrb<=0;
    pose_pending<=0;scene_request<=0;
   end else begin
@@ -129,6 +133,7 @@ module bosio_output_top #(
      7'h00:enabled<=wdata[0];
      7'h08:scene_base<=wdata;
      7'h0c:scene_words<=wdata;
+     7'h20:sensor_invert<=wdata[2:0];
      7'h5c:resolution<=wdata[1:0];
      7'h60:cfg_index<=wdata[7:0];
      7'h64:if(cfg_index<179)cfg_index<=cfg_index+1'b1;
@@ -146,6 +151,7 @@ module bosio_output_top #(
      7'h04:rdata<={frame_counter,10'b0,cache_error,scene_pending,(pose_pending||(sensor_mode&&sensor_pose_busy)),cache_busy,scene_valid,enabled};
      7'h08:rdata<=scene_base;
      7'h0c:rdata<=scene_words;
+     7'h20:rdata<={29'b0,sensor_invert};
      7'h24:rdata<=sensor_yaw;7'h28:rdata<=sensor_pitch;7'h2c:rdata<=sensor_roll;7'h30:rdata<=sensor_packets;
      7'h5c:rdata<={30'b0,resolution};
      7'h60:rdata<={24'b0,cfg_index};
@@ -164,7 +170,7 @@ module bosio_output_top #(
   .out_yaw_mrad(sensor_yaw),.out_pitch_mrad(sensor_pitch),.out_roll_mrad(sensor_roll),.sensor_stream_active(sensor_active),.sensor_pkt_count(sensor_packets));
  bosio_v2_sensor_pose u_sensor_pose(
   .clk(aclk),.rst_n(aresetn),.enable(sensor_mode),.sensor_active(sensor_active),.packet_count(sensor_packets),
-  .yaw_mrad(sensor_yaw),.pitch_mrad(sensor_pitch),.roll_mrad(sensor_roll),.commit_ack(cfg_ack),
+  .yaw_mrad(sensor_yaw_adjusted),.pitch_mrad(sensor_pitch_adjusted),.roll_mrad(sensor_roll_adjusted),.commit_ack(cfg_ack),
   .cfg_we(sensor_pose_we),.cfg_idx(sensor_pose_idx),.cfg_data(sensor_pose_data),.commit(sensor_pose_commit),
   .busy(sensor_pose_busy),.applied_count(sensor_applied_count));
  wire [10:0] fifo_count;wire full,empty,rd;wire [23:0] dout;

@@ -24,7 +24,8 @@ class BosioV2:
   s=self.core.read(4)
   sensor=self.core.read(0x78)
   signed32=lambda value:value-(1<<32) if value&(1<<31) else value
-  return dict(raw=s,enabled=bool(s&1),scene_valid=bool(s&2),dma_busy=bool(s&4),pose_pending=bool(s&8),scene_pending=bool(s&16),error=bool(s&32),frames=s>>16,received=self.core.read(0x70),fclk0_mhz=self.clock_mhz,sensor_mode=bool(sensor&1),sensor_active=bool(sensor&2),sensor_pose_busy=bool(sensor&4),sensor_applied=(sensor>>16)&0xffff,sensor_packets=self.core.read(0x30),sensor_yaw_mrad=signed32(self.core.read(0x24)),sensor_pitch_mrad=signed32(self.core.read(0x28)),sensor_roll_mrad=signed32(self.core.read(0x2c)))
+  inv=self.core.read(0x20)&7
+  return dict(raw=s,enabled=bool(s&1),scene_valid=bool(s&2),dma_busy=bool(s&4),pose_pending=bool(s&8),scene_pending=bool(s&16),error=bool(s&32),frames=s>>16,received=self.core.read(0x70),fclk0_mhz=self.clock_mhz,sensor_mode=bool(sensor&1),sensor_active=bool(sensor&2),sensor_pose_busy=bool(sensor&4),sensor_applied=(sensor>>16)&0xffff,sensor_packets=self.core.read(0x30),sensor_yaw_mrad=signed32(self.core.read(0x24)),sensor_pitch_mrad=signed32(self.core.read(0x28)),sensor_roll_mrad=signed32(self.core.read(0x2c)),sensor_invert_yaw=bool(inv&1),sensor_invert_pitch=bool(inv&2),sensor_invert_roll=bool(inv&4))
  def _wait(self,predicate,timeout=3):
   end=time.monotonic()+timeout
   while time.monotonic()<end:
@@ -41,14 +42,19 @@ class BosioV2:
   for value in coeff.flat:self.core.write(0x64,int(value)&0xffffffff)
   self.core.write(0x68,1)
   if wait and self.running:self._wait(lambda s:not s['pose_pending'])
- def use_sensor(self,enabled=True,wait=True):
+ def use_sensor(self,enabled=True,wait=True,timeout=5.0):
   before=self.status()['sensor_applied']
   self.core.write(0x78,1 if enabled else 0)
   if enabled and wait and self.running:
    # A continuous 1 kHz source can start the next conversion immediately
    # after a frame-atomic commit. The one-cycle idle gap is too short for
    # software polling, so the applied packet counter is the completion token.
-   self._wait(lambda s:s['sensor_active'] and s['sensor_applied']!=before)
+   self._wait(lambda s:s['sensor_active'] and s['sensor_applied']!=before,timeout=timeout)
+ def set_sensor_invert(self,yaw=False,pitch=False,roll=False):
+  """Invert selected sensor axes in hardware before Q24 pose generation."""
+  value=(1 if yaw else 0)|(2 if pitch else 0)|(4 if roll else 0)
+  self.core.write(0x20,value)
+  return value
  def upload(self,rgb):
   scene,count=pack_scene(rgb,self.m);self.upload_words(scene);return count
  def upload_words(self,scene):

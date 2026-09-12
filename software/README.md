@@ -40,8 +40,12 @@ driver.close()
 
 ```python
 driver.use_sensor(True)
+driver.set_sensor_invert(yaw=False, pitch=True, roll=True)
 print(driver.status())
 ```
+
+`set_sensor_invert()`는 케이스 장착 방향에 맞춰 각 축의 부호를 독립적으로
+뒤집습니다. 설정은 출력 코어의 `0x20` 레지스터에 기록됩니다.
 
 센서 스트림의 세 값은 signed `int32` milliradian이며, 패킷 형식은 다음과
 같습니다.

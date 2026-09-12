@@ -213,6 +213,7 @@ true로 보일 수 있습니다. 소프트웨어는 busy가 잠깐 false가 되�
 | `0x04` | R | bit 0 enabled, bit 1 scene valid, bit 2 DMA busy, bit 3 pose pending, bit 4 scene pending, bit 5 error, bit 31:16 frame counter |
 | `0x08` | R/W | DDR 장면 base address |
 | `0x0c` | R/W | 장면 word count |
+| `0x20` | R/W | 센서 축 반전: bit 0 yaw, bit 1 pitch, bit 2 roll |
 | `0x24` | R | raw yaw mrad, signed 32비트 |
 | `0x28` | R | raw pitch mrad, signed 32비트 |
 | `0x2c` | R | raw roll mrad, signed 32비트 |
