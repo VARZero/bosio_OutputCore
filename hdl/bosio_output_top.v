@@ -90,7 +90,8 @@ module bosio_output_top #(
 );
 
  // Version 2 register ABI. All scene/camera mutations are staged.
- reg enabled,pose_pending,scene_request,patch_request,sensor_mode;reg [1:0] resolution;
+ reg enabled,pose_pending,scene_request,patch_request,sensor_mode,aa_enable;reg [1:0] resolution;
+ reg [7:0] aa_threshold,aa_strength;
  reg [2:0] sensor_invert;
  reg [31:0] scene_base,scene_words;reg [7:0] cfg_index;
  reg awgot,wgot,bvalid,rvalid;reg [6:0] awaddr;reg [31:0] wdata,rdata;reg [3:0] wstrb;
@@ -118,6 +119,7 @@ module bosio_output_top #(
  always @(posedge aclk)begin
   if(!aresetn)begin
    enabled<=0;resolution<=1;scene_base<=0;scene_words<=0;cfg_index<=0;sensor_mode<=0;sensor_invert<=0;
+   aa_enable<=1;aa_threshold<=8'd24;aa_strength<=8'd64;
    awgot<=0;wgot<=0;bvalid<=0;rvalid<=0;rdata<=0;awaddr<=0;wdata<=0;wstrb<=0;
    pose_pending<=0;scene_request<=0;patch_request<=0;
   end else begin
@@ -134,6 +136,7 @@ module bosio_output_top #(
      7'h08:scene_base<=wdata;
      7'h0c:scene_words<=wdata;
      7'h20:sensor_invert<=wdata[2:0];
+     7'h1c:begin aa_enable<=wdata[0];aa_threshold<=wdata[15:8];aa_strength<=wdata[23:16];end
      7'h5c:resolution<=wdata[1:0];
      7'h60:cfg_index<=wdata[7:0];
      7'h64:if(cfg_index<179)cfg_index<=cfg_index+1'b1;
@@ -152,6 +155,7 @@ module bosio_output_top #(
      7'h08:rdata<=scene_base;
      7'h0c:rdata<=scene_words;
      7'h20:rdata<={29'b0,sensor_invert};
+     7'h1c:rdata<={8'b0,aa_strength,aa_threshold,7'b0,aa_enable};
      7'h24:rdata<=sensor_yaw;7'h28:rdata<=sensor_pitch;7'h2c:rdata<=sensor_roll;7'h30:rdata<=sensor_packets;
      7'h5c:rdata<={30'b0,resolution};
      7'h60:rdata<={24'b0,cfg_index};
@@ -159,7 +163,7 @@ module bosio_output_top #(
      7'h70:rdata<=received;
      7'h74:rdata<=196608;
      7'h78:rdata<={sensor_applied_count[15:0],13'b0,sensor_pose_busy,sensor_active,sensor_mode};
-     7'h7c:rdata<=32'h42533233;
+     7'h7c:rdata<=32'h42533234;
      default:rdata<=0;
     endcase
    end
@@ -174,7 +178,7 @@ module bosio_output_top #(
   .cfg_we(sensor_pose_we),.cfg_idx(sensor_pose_idx),.cfg_data(sensor_pose_data),.commit(sensor_pose_commit),
   .busy(sensor_pose_busy),.applied_count(sensor_applied_count));
  wire [10:0] fifo_count;wire full,empty,rd;wire [23:0] dout;
- wire v0,v1,v2,pv;wire [4:0] f0,f1;wire [31:0] n0,n2,den;wire [15:0] l0,l2;wire [1:0] res0,res1;wire [12:0] directory_addr;wire [9:0] cell_addr;wire [23:0] pixel;
+ wire v0,v1,v2,pv,aa_valid;wire [4:0] f0,f1;wire [31:0] n0,n2,den;wire [15:0] l0,l2;wire [1:0] res0,res1;wire [12:0] directory_addr;wire [9:0] cell_addr;wire [23:0] pixel,aa_pixel;
  bosio_v2_projector u_projector(.clk(aclk),.rst_n(aresetn),.enable(enabled),.ready(fifo_count<900),
   .cfg_we(selected_cfg_we),.cfg_idx(selected_cfg_idx),.cfg_data(selected_cfg_data),.commit(selected_commit),.commit_ack(cfg_ack),
   .scene_valid(scene_valid),.scene_pending(scene_pending),.frame_start(frame_start),.resolution(resolution),
@@ -186,7 +190,9 @@ module bosio_output_top #(
   .araddr(m_axi_araddr),.arlen(m_axi_arlen),.arvalid(m_axi_arvalid),.arready(m_axi_arready),.rdata(m_axi_rdata),.rresp(m_axi_rresp),.rlast(m_axi_rlast),.rvalid(m_axi_rvalid),.rready(m_axi_rready),
   .sample_valid(v2),.directory_addr(directory_addr),.cell_addr(cell_addr),.pixel_valid(pv),.pixel(pixel));
  assign m_axi_arsize=2;assign m_axi_arburst=1;assign m_axi_arlock=0;assign m_axi_arcache=3;assign m_axi_arprot=0;assign m_axi_arqos=0;
- bosio_out_fifo u_fifo(.clk(aclk),.rst_n(aresetn),.flush(!enabled),.wr_en(pv),.din(pixel),.full(full),.count(fifo_count),.rd_en(rd),.dout(dout),.empty(empty));
+ bosio_v2_edge_aa u_edge_aa(.clk(aclk),.rst_n(aresetn),.enable(aa_enable),.threshold(aa_threshold),.strength(aa_strength),
+  .iv(pv),.pixel_in(pixel),.ov(aa_valid),.pixel_out(aa_pixel));
+ bosio_out_fifo u_fifo(.clk(aclk),.rst_n(aresetn),.flush(!enabled),.wr_en(aa_valid),.din(aa_pixel),.full(full),.count(fifo_count),.rd_en(rd),.dout(dout),.empty(empty));
  bosio_out_stream_out u_video(.clk(aclk),.rst_n(aresetn),.enable(enabled),.screen_w(16'd1280),.screen_h(16'd720),.fifo_dout(dout),.fifo_empty(empty),.fifo_rd_en(rd),
   .m_axis_video_tdata(m_axis_video_tdata),.m_axis_video_tvalid(m_axis_video_tvalid),.m_axis_video_tready(m_axis_video_tready),.m_axis_video_tuser(m_axis_video_tuser),.m_axis_video_tlast(m_axis_video_tlast),.frame_counter(frame_counter));
 endmodule

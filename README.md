@@ -84,7 +84,7 @@ AXI4-Stream sensor -> mrad 자세 -> 투영 계수 엔진
                                    v
 화면 x/y -> barycentric DDA -> 정규화 -> 타일/셀 주소
                                    |
-DDR 장면 --AXI read-- 듀얼 BRAM 캐시 -> 팔레트 -> RGB FIFO
+DDR 장면 --AXI read-- 듀얼 BRAM 캐시 -> 팔레트 -> 경계 AA -> RGB FIFO
                                                            |
                                                            v
                                              AXI4-Stream RGB 영상
@@ -230,6 +230,7 @@ true로 보일 수 있습니다. 소프트웨어는 busy가 잠깐 false가 되�
 | `0x04` | R | bit 0 enabled, bit 1 scene valid, bit 2 DMA busy, bit 3 pose pending, bit 4 scene pending, bit 5 error, bit 31:16 frame counter |
 | `0x08` | R/W | DDR 장면 base address |
 | `0x0c` | R/W | 장면 word count |
+| `0x1c` | R/W | AA 설정: bit 0 enable, bit 15:8 경계 임계값, bit 23:16 혼합 강도 |
 | `0x20` | R/W | 센서 축 반전: bit 0 yaw, bit 1 pitch, bit 2 roll |
 | `0x24` | R | raw yaw mrad, signed 32비트 |
 | `0x28` | R | raw pitch mrad, signed 32비트 |
@@ -243,7 +244,7 @@ true로 보일 수 있습니다. 소프트웨어는 busy가 잠깐 false가 되�
 | `0x70` | R | 수신 DMA word count |
 | `0x74` | R | 캐시 용량(바이트), `196608` |
 | `0x78` | R/W | write bit 0: 센서 모드 enable; read bit 1 sensor active, bit 2 pose engine busy, bit 31:16 마지막 적용 packet ID 하위 16비트 |
-| `0x7c` | R | bitstream signature `0x42533233` (`BS23`) |
+| `0x7c` | R | bitstream signature `0x42533234` (`BS24`) |
 
 센서 모드가 켜져 있으면 수동 계수 commit은 무시됩니다. 수동 자세를
 설정하려면 먼저 센서 모드를 끄십시오.
@@ -256,6 +257,7 @@ true로 보일 수 있습니다. 소프트웨어는 busy가 잠깐 false가 되�
 | `bosio_v2_sensor_pose.v` | raw mrad 자세 변환 및 CORDIC |
 | `bosio_v2_projector.v` | 면 선택 및 barycentric affine DDA |
 | `bosio_v2_cache.v` | DDR 리더, sparse directory, palette, 듀얼 BRAM 캐시 |
+| `bosio_v2_edge_aa.v` | 한 줄 버퍼 기반 경계 적응형 투영 AA |
 | `bosio_out_fifo.v` | RGB24 출력 FIFO |
 | `bosio_out_stream_out.v` | 영상 AXI4-Stream 프레이밍 |
 | `bosio_out_sensor_rx.v` | 센서 패킷 수신기 |
@@ -307,21 +309,21 @@ PYNQ-Z2 참조 빌드는 100 MHz에서 다음 결과를 얻었습니다.
 
 | 자원 | 사용량 |
 |---|---:|
-| LUT (logic + distributed memory) | 25,795 (48.49%) |
-| LUT as logic | 22,003 (41.36%) |
-| Register | 24,472 (23.00%) |
+| LUT (logic + distributed memory) | 26,894 (50.55%) |
+| Register | 24,710 (23.22%) |
 | BRAM tile | 137.5 / 140 (98.21%) |
 | DSP | 83 (37.73%) |
-| WNS / WHS | +0.060 ns / +0.051 ns |
+| WNS / WHS | +0.281 ns / +0.051 ns |
 
 921,600픽셀 AXI/backpressure 시스템 테스트, 5개 자세의 raw sensor 계수
-테스트, 전체 장면 이후 부분 패치를 두 cache bank에 적용하는 RTL 테스트를
-통과했습니다. 위 수치는 부분 타일 갱신 RTL을 포함한 참조 Zynq-7020 구현
-결과이며, 다른 FPGA나 파라미터를 사용할 때는 다시 합성·검증해야 합니다.
+테스트, 전체 장면 이후 부분 패치를 두 cache bank에 적용하는 RTL 테스트와
+AA 픽셀 개수·순서·혼합값 테스트를 통과했습니다. 위 수치는 부분 타일 갱신과
+경계 AA RTL을 포함한 참조 Zynq-7020 구현 결과이며, 다른 FPGA나 파라미터를
+사용할 때는 다시 합성·검증해야 합니다.
 
-부분 갱신 회귀 테스트는 `verification/tb_partial_tile_cache.v`에 있습니다.
-이 테스트는 전체 장면을 두 bank에 복제한 뒤 `BPT1` 패치를 교체·재적용하고,
-두 bank의 동일한 셀 값과 DMA 수신 워드 수를 확인합니다.
+부분 갱신 회귀 테스트는 `verification/tb_partial_tile_cache.v`, AA 회귀 테스트는
+`verification/tb_edge_aa.v`에 있습니다. 두 테스트는 통합 저장소인
+`bosio_SphericalWM`에서 제공합니다.
 
 ## 알려진 제한사항
 
@@ -332,11 +334,11 @@ PYNQ-Z2 참조 빌드는 100 MHz에서 다음 결과를 얻었습니다.
   내부에서 렌더링하지 않습니다.
 - BRAM 사용량이 Zynq-7020 한계에 가깝습니다. 더 큰 `M`, 더 많은 활성 장면,
   추가 버퍼가 필요하면 메모리 구조를 변경해야 할 수 있습니다.
-- 이 패키지에는 라이선스 파일이 없습니다. GitHub 공개 전에 프로젝트가
-  선택한 오픈소스 라이선스의 `LICENSE` 파일을 추가하십시오.
+- 한 줄 인과 AA 필터는 대칭 3×3 필터보다 단순하며 고주파 무늬에도 반응할 수
+  있습니다. 기본 설정은 enable, threshold 24, strength 64입니다.
 
 ## 버전 관리
 
-현재 패키지 버전은 `1.0`, core revision은 `24`, runtime signature는
-`0x42533233`입니다. 레지스터 ABI, 장면 메모리 형식, 센서 패킷 형식을
+현재 패키지 버전은 `1.0`, core revision은 `25`, runtime signature는
+`0x42533234`입니다. 레지스터 ABI, 장면 메모리 형식, 센서 패킷 형식을
 변경할 때는 패키지 revision을 올리고 이 README에 변경 내용을 기록하십시오.

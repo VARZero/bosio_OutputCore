@@ -459,7 +459,7 @@
         <spirit:parameters>
           <spirit:parameter>
             <spirit:name>viewChecksum</spirit:name>
-            <spirit:value>cabc6b89</spirit:value>
+            <spirit:value>082a7d22</spirit:value>
           </spirit:parameter>
         </spirit:parameters>
       </spirit:view>
@@ -475,7 +475,7 @@
         <spirit:parameters>
           <spirit:parameter>
             <spirit:name>viewChecksum</spirit:name>
-            <spirit:value>cabc6b89</spirit:value>
+            <spirit:value>082a7d22</spirit:value>
           </spirit:parameter>
         </spirit:parameters>
       </spirit:view>
@@ -1290,6 +1290,10 @@
         <spirit:fileType>verilogSource</spirit:fileType>
       </spirit:file>
       <spirit:file>
+        <spirit:name>hdl/bosio_v2_edge_aa.v</spirit:name>
+        <spirit:fileType>verilogSource</spirit:fileType>
+      </spirit:file>
+      <spirit:file>
         <spirit:name>hdl/bosio_v2_projector.v</spirit:name>
         <spirit:fileType>verilogSource</spirit:fileType>
       </spirit:file>
@@ -1339,6 +1343,10 @@
       </spirit:file>
       <spirit:file>
         <spirit:name>hdl/bosio_v2_cache.v</spirit:name>
+        <spirit:fileType>verilogSource</spirit:fileType>
+      </spirit:file>
+      <spirit:file>
+        <spirit:name>hdl/bosio_v2_edge_aa.v</spirit:name>
         <spirit:fileType>verilogSource</spirit:fileType>
       </spirit:file>
       <spirit:file>
@@ -1417,15 +1425,15 @@
       <xilinx:displayName>Bosio 3DoF Display Output Core</xilinx:displayName>
       <xilinx:definitionSource>package_project</xilinx:definitionSource>
       <xilinx:vendorDisplayName>VARZero Lab</xilinx:vendorDisplayName>
-      <xilinx:coreRevision>24</xilinx:coreRevision>
-      <xilinx:coreCreationDateTime>2026-09-12T14:09:37Z</xilinx:coreCreationDateTime>
+      <xilinx:coreRevision>25</xilinx:coreRevision>
+      <xilinx:coreCreationDateTime>2026-09-14T01:18:52Z</xilinx:coreCreationDateTime>
     </xilinx:coreExtensions>
     <xilinx:packagingInfo>
       <xilinx:xilinxVersion>2020.2</xilinx:xilinxVersion>
       <xilinx:checksum xilinx:scope="busInterfaces" xilinx:value="10e2322d"/>
       <xilinx:checksum xilinx:scope="addressSpaces" xilinx:value="341053d0"/>
       <xilinx:checksum xilinx:scope="memoryMaps" xilinx:value="88ebdc01"/>
-      <xilinx:checksum xilinx:scope="fileGroups" xilinx:value="24b3fd7d"/>
+      <xilinx:checksum xilinx:scope="fileGroups" xilinx:value="32050b8e"/>
       <xilinx:checksum xilinx:scope="ports" xilinx:value="be8116a7"/>
       <xilinx:checksum xilinx:scope="hdlParameters" xilinx:value="e63e9d31"/>
       <xilinx:checksum xilinx:scope="parameters" xilinx:value="56c0d81e"/>

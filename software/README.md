@@ -26,6 +26,9 @@ driver.upload(scene_rgb)
 driver.set_pose(0.0, 0.0, 0.0, 60.0, 45.0)
 driver.start()
 
+# 투영 경계 AA: enable, 밝기 임계값, 혼합 강도(각 0..255)
+driver.set_antialias(True, threshold=24, strength=64)
+
 print(driver.status())
 driver.close()
 ```
@@ -77,7 +80,7 @@ driver.upload_words(words)
 
 ## 코어 호환성
 
-드라이버는 bitstream signature `0x42533233`을 확인합니다. `upload_patch()`는
+드라이버는 bitstream signature `0x42533234`를 확인합니다. `upload_patch()`는
 윈도우 합성기가 만든 `BPT1` 타일 패킷을 양쪽 BRAM bank에 원자적으로 적용합니다.
 다른 core
 revision이나 다른 레지스터 ABI를 사용할 때는 드라이버의 signature 검사와
