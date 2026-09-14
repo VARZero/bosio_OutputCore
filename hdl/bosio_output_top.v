@@ -118,8 +118,8 @@ module bosio_output_top #(
  assign s_axi_lite_rvalid=rvalid;assign s_axi_lite_rdata=rdata;assign s_axi_lite_rresp=0;
  always @(posedge aclk)begin
   if(!aresetn)begin
-   enabled<=0;resolution<=1;scene_base<=0;scene_words<=0;cfg_index<=0;sensor_mode<=0;sensor_invert<=0;
-   aa_enable<=1;aa_threshold<=8'd24;aa_strength<=8'd64;
+   enabled<=0;resolution<=2;scene_base<=0;scene_words<=0;cfg_index<=0;sensor_mode<=0;sensor_invert<=0;
+   aa_enable<=1;aa_threshold<=8'd24;aa_strength<=8'd32;
    awgot<=0;wgot<=0;bvalid<=0;rvalid<=0;rdata<=0;awaddr<=0;wdata<=0;wstrb<=0;
    pose_pending<=0;scene_request<=0;patch_request<=0;
   end else begin
