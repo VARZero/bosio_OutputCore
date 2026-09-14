@@ -19,7 +19,7 @@ Python 3, NumPy, PYNQ가 필요합니다. 두 파일은 같은 디렉토리에 �
 import numpy as np
 from bosio_driver_v2 import BosioV2
 
-driver = BosioV2("bosio_v2.bit", m=32)
+driver = BosioV2("bosio_v2.bit", m=16)
 
 # scene_rgb의 shape은 (20, 211, M*M, 3), dtype은 uint8
 driver.upload(scene_rgb)
@@ -70,7 +70,7 @@ TDATA[95:64]  = roll_mrad
 ```python
 from bosio_geometry_v2 import pack_scene
 
-words, active_tiles = pack_scene(scene_rgb, m=32)
+words, active_tiles = pack_scene(scene_rgb, m=16)
 driver.upload_words(words)
 ```
 
