@@ -1,4 +1,7 @@
 # BOSIO 출력 코어
+## 영상으로 함 보시죠
+[![이미지 텍스트](http://i.ytimg.com/vi/5v-ZqBwbi3k/0.jpg)](https://www.youtube.com/watch?v=5v-ZqBwbi3k)
+유튜브 링크입니다.
 
 ## 들어가기 전에,
 안녕하세요. 저는 VARZero 계정주인입니다.  
