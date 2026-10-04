@@ -344,12 +344,25 @@ AXI4-Stream, clock, reset 연결 정보가 포함되어 있습니다.
 7. 장면을 업로드하고 수동 계수 또는 센서 모드를 설정한 뒤 enable을 켭니다.
 8. 초기화 시 `0x04`, `0x30`, `0x70`, `0x78`을 모니터링합니다.
 
-## BS25 참조 검증 결과
+## 현재 BS25 검증 결과
 
-64바이트 라인·16KiB·2-way를 사용하는 PYNQ-Z2 통합 빌드는 100MHz에서
-LUT 23,733개(44.61%), 레지스터 24,821개, BRAM 21.5/140개(15.36%), DSP 83개를
-사용했습니다. 최종 WNS는 +0.111ns, WHS는 +0.019ns입니다.
-기존 BS24 참조 빌드의 BRAM 사용량은 아래 표의 137.5/140개였습니다.
+현재 기본 비트스트림은 **BS25**입니다. 64바이트 라인·16KiB·2-way 캐시를
+사용하는 PYNQ-Z2 통합 빌드의 100MHz 배치·배선 결과는 다음과 같습니다.
+이 수치는 출력 IP 단독이 아니라 센서 허브와 영상 경로를 포함한 전체 시스템입니다.
+
+| 자원·타이밍 | 현재 BS25 |
+|---|---:|
+| LUT (logic + distributed memory) | 23,733 / 53,200 (44.61%) |
+| Register | 24,821 / 106,400 (23.33%) |
+| BRAM tile | **21.5 / 140 (15.36%)** |
+| DSP | 83 / 220 (37.73%) |
+| WNS / WHS | +0.111 ns / +0.019 ns |
+
+이전 BS24의 BRAM 사용량은 137.5/140개(98.21%)였습니다. BS25는 셀 데이터를
+DDR에 유지하므로 현재 BRAM 사용량이 크게 줄었습니다.
+원본 [자원 보고서](https://github.com/VARZero/bosio_SphericalWM/blob/main/verification/results/bs25_utilization.rpt)와
+[타이밍 보고서](https://github.com/VARZero/bosio_SphericalWM/blob/main/verification/results/bs25_timing_summary.rpt)에서
+확인할 수 있습니다.
 
 실제 보드에서 M=16 전체 구면 4220타일(1,098,240바이트 장면)을 읽으며
 RTL 출력 스트림의 프레임 카운터로 약 59.9FPS를 확인했습니다.
@@ -359,9 +372,18 @@ RTL 출력 스트림의 프레임 카운터로 약 59.9FPS를 확인했습니다
 M=32는 전체 구면 패킹만 확인했으며, 실시간 출력 성능을 측정한 결과는 아닙니다.
 원본 수치와 보고서는 통합 저장소의 `verification/results/`에 있습니다.
 
-## BS24 참조 검증 결과
+BS25 캐시 검증은 [tb_cache_line.v](verification/tb_cache_line.v)와
+[tb_ddr_scene_cache.v](verification/tb_ddr_scene_cache.v)에 있습니다.
+AA 회귀 테스트 `verification/tb_edge_aa.v`는 통합 저장소
+`bosio_SphericalWM`에서 제공합니다.
 
-PYNQ-Z2 참조 빌드는 100 MHz에서 다음 결과를 얻었습니다.
+<details>
+<summary>이전 BS24 검증 기록 — 현재 비트스트림 수치가 아닙니다</summary>
+
+### 이전 BS24 검증 결과
+
+아래는 DDR 캐시 전환 전 BS24 PYNQ-Z2 통합 빌드의 100MHz 결과입니다.
+`DDR_CACHE_ENABLE=0` 호환 모드의 비교 자료로 남겼습니다.
 
 | 자원 | 사용량 |
 |---|---:|
@@ -378,10 +400,9 @@ AA 픽셀 개수·순서·혼합값 테스트를 통과했습니다. 위 수치�
 사용할 때는 다시 합성·검증해야 합니다.
 
 BS24 부분 갱신 회귀 테스트는 [tb_partial_tile_cache.v](verification/tb_partial_tile_cache.v),
-BS25 테스트는 [tb_cache_line.v](verification/tb_cache_line.v)와
-[tb_ddr_scene_cache.v](verification/tb_ddr_scene_cache.v)에 있습니다.
-AA 회귀 테스트 `verification/tb_edge_aa.v`는 통합 저장소
-`bosio_SphericalWM`에서 제공합니다.
+AA 테스트는 통합 저장소의 `verification/tb_edge_aa.v`에 있습니다.
+
+</details>
 
 ## 알려진 제한사항
 
