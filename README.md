@@ -51,9 +51,8 @@ GY-521 센서 허브와 PYNQ-Z2 통합 빌드는
 기본 빌드는 BS25 파라미터형 DDR 읽기 캐시를 사용합니다. 셀 색 데이터는
 DDR에 유지하고, 기본 64바이트 라인·16KiB·2-way 캐시로 읽습니다.
 [BS25 캐시 문서](docs/CACHE_LINE.md)에 파라미터, 새 레지스터, DDR 버퍼 수명과
-부분 갱신 방법을 설명했습니다. 아래의 기존 BRAM 용량·BPT1 직접 DMA 설명은
-`DDR_CACHE_ENABLE=0`인 BS24에 해당합니다. BS25에서는 제공 드라이버가 BPT1을
-DDR 장면에 적용합니다.
+부분 갱신 방법을 설명했습니다. 본문은 BS25를 기준으로 하며,
+`DDR_CACHE_ENABLE=0`인 BS24의 용량·갱신 방식은 호환 모드 항목에서 구분합니다.
 
 포함 항목:
 
@@ -73,7 +72,7 @@ DDR 장면에 적용합니다.
 
 ```text
 software/
-  bosio_driver_v2.py       # PYNQ Overlay·DMA·레지스터 제어
+  bosio_driver_v2.py       # PYNQ Overlay·DDR 장면·레지스터 제어
   bosio_geometry_v2.py     # 정이십면체 좌표·Q24·장면 패킹
   requirements.txt          # numpy, pynq
   README.md                 # 드라이버 사용법
@@ -94,7 +93,9 @@ AXI4-Stream sensor -> mrad 자세 -> 투영 계수 엔진
                                    v
 화면 x/y -> barycentric DDA -> 정규화 -> 타일/셀 주소
                                    |
-DDR 장면 --AXI read-- 듀얼 BRAM 캐시 -> 팔레트 -> 경계 AA -> RGB FIFO
+DDR 셀 데이터 -> BS25 라인 캐시 -> 팔레트 -> 경계 AA -> RGB FIFO
+                   ^                ^
+           타일 디렉터리 BRAM     팔레트 BRAM
                                                            |
                                                            v
                                              AXI4-Stream RGB 영상
@@ -124,8 +125,12 @@ cell = row² + 2·column + orientation
 
 ## 장면 메모리 형식
 
-AXI 마스터는 외부 DDR의 패킹된 장면을 32비트 데이터와 16-beat 증가 버스트로
-읽습니다. 장면 시작 주소는 64바이트 정렬이어야 합니다.
+BS25는 외부 DDR의 패킹된 장면에서 팔레트와 디렉터리를 먼저 읽고, 출력 중
+필요한 셀 데이터만 캐시 라인 단위로 읽습니다. 현재 통합 AXI 폭은 32비트입니다.
+메타데이터 로드는 16-beat 증가 버스트를 사용하며, 셀 데이터 읽기의 버스트 길이는
+`CACHE_LINE_BYTES / 4`입니다. 기본 64바이트 라인에서는 두 경로 모두 16-beat입니다.
+장면 시작 주소는 최소 64바이트 정렬하고, 할당 길이는 최대 라인 크기인
+1024바이트 단위로 패딩합니다. 제공 드라이버가 정렬과 버퍼 수명을 관리합니다.
 
 | 워드 범위 | 내용 |
 |---:|---|
@@ -134,21 +139,40 @@ AXI 마스터는 외부 DDR의 패킹된 장면을 32비트 데이터와 16-beat
 | `4476 ..` | 패킹된 8비트 셀 색상 인덱스 |
 
 디렉터리 항목은 셀 데이터 영역의 바이트 오프셋입니다. `0xffffffff`는
-비활성 타일을 의미합니다. 캐시 용량은 bank당 196,608바이트이며, 헤더를
-포함한 최대 장면 전송 크기는 53,632워드입니다.
+비활성 타일을 의미합니다. 전체 길이는 16워드로 정렬합니다. BS25는 셀 데이터
+전체를 BRAM에 저장하지 않으므로 M=32의 전체 4,220타일도 패킹할 수 있습니다.
+이 장면은 1,084,800워드(4,339,200바이트)이며, 기본 데이터 캐시는 16KiB입니다.
+장면 크기와 캐시 용량은 서로 다릅니다. M=32 실시간 성능은 별도 검증이 필요합니다.
 
-새 장면은 현재 사용하지 않는 BRAM bank로 수신한 뒤 프레임 경계에서 교체됩니다.
-교체 후 같은 장면을 이전 bank에도 복제하므로 두 bank는 다음 부분 갱신의 동일한
-기준 장면을 유지합니다. `BPT1` 패치는 기존 directory offset을 사용하는 타일만
-비활성 bank에 기록하고 프레임 경계에서 교체한 다음 이전 bank에도 재적용합니다.
-따라서 전체 장면과 부분 갱신 모두 화면 중간에 바뀌지 않습니다.
+### BS25 전체·부분 갱신
+
+드라이버는 지속적인 DDR 장면 버퍼 두 개를 유지합니다. 전체 갱신은 비활성
+버퍼를 채우고 팔레트·디렉터리를 로드합니다. 부분 갱신은 `BPT1`을 검사한 뒤
+비활성 버퍼의 변경 타일만 수정합니다. 두 경우 모두 코어가 이전 읽기를 끝내고
+다음 프레임 경계에서 장면 주소를 바꾸며, 읽기 캐시도 함께 무효화합니다.
+드라이버는 `0x44`의 활성 주소로 전환 완료를 확인한 뒤 이전 버퍼에 같은 변경을
+반영합니다. 부분 갱신에서는 매번 장면 전체를 복사하지 않습니다.
+
+`0x6c=2`는 완성된 DDR 장면의 주소 전환 명령입니다. BS25 코어에 BPT1 패킷
+주소를 직접 전달하면 안 됩니다. 출력 중인 DDR 버퍼를 수정하거나 해제해서도
+안 됩니다. 상세 절차는 [캐시·레지스터 문서](docs/CACHE_LINE.md)에 있습니다.
 
 부분 갱신 패킷은 16워드 정렬 형식입니다. 파일 헤더 16워드 뒤에 타일마다
 16워드 record header와 `M*M/4`개의 payload word가 옵니다. 파일 헤더의 word
 0은 `0x42505431`(`BPT1`), word 1은 타일당 payload word 수, word 2는 record 수,
-word 3은 전체 word 수입니다. record header의 word 0은 셀 데이터 RAM의 word
-offset이고 word 1은 진단용 global tile ID입니다. 타일 활성 여부나 directory
-배치가 달라질 때는 전체 장면을 다시 올려야 합니다.
+word 3은 전체 word 수입니다. record header의 word 0은 셀 데이터 영역 기준
+word offset이고 word 1은 global tile ID입니다. BS25 드라이버는 ID와 현재
+디렉터리의 바이트 오프셋이 `word offset * 4`와 일치하는지 검사합니다.
+타일 활성 여부, directory 배치 또는 팔레트가 달라질 때는 전체 장면을 다시
+올려야 합니다.
+
+### BS24 호환 모드
+
+`DDR_CACHE_ENABLE=0`으로 빌드하면 셀 데이터를 두 BRAM bank에 저장합니다.
+bank당 데이터 용량은 196,608바이트이며 헤더를 포함한 최대 장면은
+53,632워드입니다. BS24는 전체 장면 또는 BPT1 패킷을 비활성 bank로 직접
+읽고, 프레임 경계에서 교체한 뒤 이전 bank에도 복제합니다. 이 용량 제한과
+직접 BPT1 적용 방식은 BS25에 해당하지 않습니다.
 
 RGB 장면을 이 형식으로 만드는 방법은 이 코어가 정의하지 않습니다. 외부
 장면 생성기가 팔레트·디렉터리·셀 데이터를 생성해야 합니다.
@@ -169,9 +193,10 @@ full byte strobe로 레지스터를 기록합니다.
 
 ### AXI4 Full 마스터
 
-기본 인터페이스는 32비트 읽기 전용 마스터입니다. 코어는 16-beat 증가 버스트를
-발행합니다(`ARLEN=15`, `ARSIZE=2`). `RRESP`, `RVALID`, `RREADY`, `RLAST`를
-검사합니다.
+현재 통합 인터페이스는 32비트 읽기 전용 마스터입니다(`ARSIZE=2`).
+BS25 셀 읽기의 `ARLEN`은 `CACHE_LINE_BYTES / 4 - 1`이며 기본값은 15입니다.
+메타데이터 로드와 BS24 장면 로드는 16-beat 증가 버스트를 사용합니다.
+`RRESP`, `RVALID`, `RREADY`, `RLAST`를 검사합니다.
 
 ### 센서 AXI4-Stream 슬레이브
 
@@ -270,7 +295,9 @@ true로 보일 수 있습니다. 소프트웨어는 busy가 잠깐 false가 되�
 | `bosio_output_top.v` | 최상위 인터페이스, 레지스터 ABI, 파이프라인 연결 |
 | `bosio_v2_sensor_pose.v` | raw mrad 자세 변환 및 CORDIC |
 | `bosio_v2_projector.v` | 면 선택 및 barycentric affine DDA |
-| `bosio_v2_cache.v` | DDR 리더, sparse directory, palette, 듀얼 BRAM 캐시 |
+| `varzero_cache_line.v` | 파라미터형 읽기 전용 AXI 라인 캐시 |
+| `bosio_ddr_scene_cache.v` | BS25 디렉터리 조회, DDR 요청 큐, 장면 주소 전환 |
+| `bosio_v2_cache.v` | BS24 호환 모드의 DDR 리더와 듀얼 BRAM 장면 캐시 |
 | `bosio_v2_edge_aa.v` | 한 줄 버퍼 기반 경계 적응형 투영 AA |
 | `bosio_out_fifo.v` | RGB24 출력 FIFO |
 | `bosio_out_stream_out.v` | 영상 AXI4-Stream 프레이밍 |
@@ -281,7 +308,7 @@ true로 보일 수 있습니다. 소프트웨어는 busy가 잠깐 false가 되�
 | `bosio_out_reg_ctrl.v` | 이전 버전 호환/지원 레지스터 제어 로직 |
 | `bosio_out_dma_cache.v` | 이전 버전 호환/지원 DMA 캐시 로직 |
 
-v2 최상위는 `bosio_v2_*` 파이프라인과 센서 수신기를 사용합니다. 나머지
+최상위는 투영·센서·AA 파이프라인과 선택한 BS25/BS24 캐시를 연결합니다. 나머지
 `bosio_out_*` 파일은 패키지의 소스 집합에 포함되어 있으며 이전 통합 환경과의
 호환성을 위해 보존되어 있습니다.
 
@@ -325,7 +352,9 @@ LUT 23,733개(44.61%), 레지스터 24,821개, BRAM 21.5/140개(15.36%), DSP 83�
 기존 BS24 참조 빌드의 BRAM 사용량은 아래 표의 137.5/140개였습니다.
 
 실제 보드에서 M=16 전체 구면 4220타일(1,098,240바이트 장면)을 읽으며
-약 59.9FPS를 확인했습니다. 이 테스트의 cache hit 비율은 99.86%였으며,
+RTL 출력 스트림의 프레임 카운터로 약 59.9FPS를 확인했습니다.
+이는 소프트웨어 장면 합성 FPS나 캡처보드 측정값과 다릅니다.
+이 테스트의 cache hit 비율은 99.86%였으며,
 한 타일의 부분 갱신 8회를 두 DDR 버퍼에 적용하고 주소 전환을 확인했습니다.
 M=32는 전체 구면 패킹만 확인했으며, 실시간 출력 성능을 측정한 결과는 아닙니다.
 원본 수치와 보고서는 통합 저장소의 `verification/results/`에 있습니다.
@@ -348,8 +377,10 @@ AA 픽셀 개수·순서·혼합값 테스트를 통과했습니다. 위 수치�
 경계 AA RTL을 포함한 참조 Zynq-7020 구현 결과이며, 다른 FPGA나 파라미터를
 사용할 때는 다시 합성·검증해야 합니다.
 
-부분 갱신 회귀 테스트는 `verification/tb_partial_tile_cache.v`, AA 회귀 테스트는
-`verification/tb_edge_aa.v`에 있습니다. 두 테스트는 통합 저장소인
+BS24 부분 갱신 회귀 테스트는 [tb_partial_tile_cache.v](verification/tb_partial_tile_cache.v),
+BS25 테스트는 [tb_cache_line.v](verification/tb_cache_line.v)와
+[tb_ddr_scene_cache.v](verification/tb_ddr_scene_cache.v)에 있습니다.
+AA 회귀 테스트 `verification/tb_edge_aa.v`는 통합 저장소
 `bosio_SphericalWM`에서 제공합니다.
 
 ## 알려진 제한사항

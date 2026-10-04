@@ -5,7 +5,7 @@
 
 ## 파일
 
-- `bosio_driver_v2.py`: bitstream 로드, 장면 DMA 업로드, 수동 자세 설정,
+- `bosio_driver_v2.py`: 비트스트림 로드, DDR 장면·부분 갱신, 수동 자세 설정,
   센서 모드 전환, 상태 조회
 - `bosio_geometry_v2.py`: 정이십면체 기준 좌표, 셀/타일 매핑, 수동 Q24
   투영 계수 계산, 장면 메모리 패킹
@@ -28,7 +28,9 @@ from bosio_driver_v2 import BosioV2
 
 driver = BosioV2("bosio_v2.bit", m=16)
 
-# scene_rgb의 shape은 (20, 211, M*M, 3), dtype은 uint8
+# 한 타일을 파란색으로 채웁니다. shape=(20, 211, M*M, 3), dtype=uint8
+scene_rgb = np.zeros((20, 211, 16 * 16, 3), dtype=np.uint8)
+scene_rgb[0, 0] = (32, 120, 220)
 driver.upload(scene_rgb)
 driver.set_pose(0.0, 0.0, 0.0, 60.0, 45.0)
 driver.start()
@@ -91,10 +93,27 @@ driver.upload_words(words)
 `upload_patch()`는 윈도우 합성기가 만든 `BPT1` 타일 패킷을 받습니다.
 BS24는 양쪽 BRAM 뱅크에 적용하며, BS25는 DDR 장면의 변경 타일을 수정한 뒤
 프레임 경계에서 장면 주소를 전환합니다.
-다른 core
-revision이나 다른 레지스터 ABI를 사용할 때는 드라이버의 signature 검사와
+다른 코어 리비전이나 레지스터 ABI를 사용할 때는 드라이버의 식별값 검사와
 레지스터 정의를 함께 갱신해야 합니다.
 
 이 드라이버는 PYNQ-Z2 참조 설계의 `output_core_0` 인스턴스와 100 MHz
 FCLK0를 기준으로 작성되었습니다. 다른 보드에서는 Overlay 계층 이름,
-클록 설정, 물리 주소와 DMA 연결을 확인해야 합니다.
+클록 설정, 물리 주소와 AXI DDR 연결을 확인해야 합니다.
+
+## 장면 버퍼의 수명
+
+| 함수 | 역할 |
+|---|---|
+| `upload(rgb)` | RGB 셀 배열을 패킹하고 전체 장면 업로드 |
+| `upload_words(words)` | 이미 패킹된 전체 장면 업로드 |
+| `upload_patch(words)` | BPT1 검증 후 변경 타일 적용; 팔레트·배치가 바뀌면 전체 갱신 필요 |
+| `start()` | 출력 시작 및 초기 장면 전환 완료 |
+| `status()` | 출력·센서·AA 상태, BS25 캐시 설정과 누적 카운터 조회 |
+| `close()` | 출력 중단, 남은 DDR 읽기 배출 후 장면 버퍼 해제 |
+
+초기 업로드 뒤에는 `start()`를 호출해야 합니다. 초기 장면 전환이 대기 중일 때
+두 번째 업로드를 하지 마세요. 출력 중인 DDR 버퍼는 계속 유효해야 하므로
+앱이 직접 해제하거나 다른 프로세스에서 덮어쓰면 안 됩니다. 독립 드라이버
+프로그램은 종료 시 `finally`에서 `close()`를 호출하는 것이 좋습니다.
+BOSIO 윈도우 데몬을 사용하는 앱은 드라이버를 직접 생성하지 않고 IPC를
+사용합니다. 장면 버퍼와 비트스트림은 데몬이 소유합니다.
