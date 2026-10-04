@@ -2,7 +2,7 @@
 // Twenty projective face cones. Each of 60 barycentric numerators is an
 // affine function of screen x/y, evaluated using add-only DDA at pixel rate.
 module bosio_v2_projector(
- input wire clk,rst_n,enable,ready,
+ input wire clk,rst_n,enable,ready,frame_ready,
  input wire cfg_we,input wire [7:0] cfg_idx,input wire [31:0] cfg_data,
  input wire commit,output reg commit_ack,
  input wire scene_valid,scene_pending,output wire frame_start,
@@ -16,7 +16,7 @@ module bosio_v2_projector(
  reg running,initialized;reg [6:0] gap;reg [10:0] x;reg [9:0] y;
  reg [1:0] res;
  integer i;
- wire start=enable&&!running&&(gap==0)&&(scene_valid||scene_pending)&&(initialized||commit);
+ wire start=enable&&!running&&(gap==0)&&frame_ready&&(scene_valid||scene_pending)&&(initialized||commit);
  assign frame_start=start;
  always @(posedge clk) if(cfg_we && cfg_idx<180)shadow[cfg_idx]<=cfg_data;
  wire step=running&&ready&&enable;

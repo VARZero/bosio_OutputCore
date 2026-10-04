@@ -48,6 +48,13 @@ GY-521 센서 허브와 PYNQ-Z2 통합 빌드는
 
 ## 공개 범위
 
+기본 빌드는 BS25 파라미터형 DDR 읽기 캐시를 사용합니다. 셀 색 데이터는
+DDR에 유지하고, 기본 64바이트 라인·16KiB·2-way 캐시로 읽습니다.
+[BS25 캐시 문서](docs/CACHE_LINE.md)에 파라미터, 새 레지스터, DDR 버퍼 수명과
+부분 갱신 방법을 설명했습니다. 아래의 기존 BRAM 용량·BPT1 직접 DMA 설명은
+`DDR_CACHE_ENABLE=0`인 BS24에 해당합니다. BS25에서는 제공 드라이버가 BPT1을
+DDR 장면에 적용합니다.
+
 포함 항목:
 
 - `component.xml`: Vivado IP-XACT 패키지 메타데이터
@@ -233,21 +240,25 @@ true로 보일 수 있습니다. 소프트웨어는 busy가 잠깐 false가 되�
 | `0x04` | R | bit 0 enabled, bit 1 scene valid, bit 2 DMA busy, bit 3 pose pending, bit 4 scene pending, bit 5 error, bit 31:16 frame counter |
 | `0x08` | R/W | DDR 장면 base address |
 | `0x0c` | R/W | 장면 word count |
+| `0x10` / `0x14` / `0x18` | R | BS25 cache hit / miss / 요청 대기 클럭 |
 | `0x1c` | R/W | AA 설정: bit 0 enable, bit 15:8 경계 임계값, bit 23:16 혼합 강도 |
 | `0x20` | R/W | 센서 축 반전: bit 0 yaw, bit 1 pitch, bit 2 roll |
 | `0x24` | R | raw yaw mrad, signed 32비트 |
 | `0x28` | R | raw pitch mrad, signed 32비트 |
 | `0x2c` | R | raw roll mrad, signed 32비트 |
 | `0x30` | R | 수신 센서 packet counter |
+| `0x34` / `0x38` / `0x3c` | R | BS25 라인 바이트 / 캐시 바이트 / way 수 |
+| `0x40` | R | BS25 bit 0: 픽셀 요청·응답 배출 완료 |
+| `0x44` | R | BS25 활성 DDR 장면 BASE |
 | `0x5c` | R/W | resolution: 0=`M8`, 1=`M16`, 2=`M32` |
 | `0x60` | R/W | 수동 계수 write index |
 | `0x64` | W | 수동 계수 data; 기록 후 index 증가 |
 | `0x68` | W | bit 0: 수동 계수 commit |
-| `0x6c` | W | bit 0: 전체 장면 DMA 요청, bit 1: `BPT1` 부분 타일 요청 |
-| `0x70` | R | 수신 DMA word count |
-| `0x74` | R | 캐시 용량(바이트), `196608` |
+| `0x6c` | W | bit 0: 전체 장면 로드, bit 1: BS25 DDR 주소 전환 / BS24 BPT1 직접 적용 |
+| `0x70` | R | 수신 word count. BS25는 메타데이터, BS24는 전체 DMA |
+| `0x74` | R | BS25 최대 셀 데이터 4,321,280바이트 / BS24 BRAM 데이터 196,608바이트 |
 | `0x78` | R/W | write bit 0: 센서 모드 enable; read bit 1 sensor active, bit 2 pose engine busy, bit 31:16 마지막 적용 packet ID 하위 16비트 |
-| `0x7c` | R | bitstream signature `0x42533234` (`BS24`) |
+| `0x7c` | R | 기본 `0x42533235` (BS25) / legacy `0x42533234` (BS24) |
 
 센서 모드가 켜져 있으면 수동 계수 commit은 무시됩니다. 수동 자세를
 설정하려면 먼저 센서 모드를 끄십시오.
@@ -306,7 +317,20 @@ AXI4-Stream, clock, reset 연결 정보가 포함되어 있습니다.
 7. 장면을 업로드하고 수동 계수 또는 센서 모드를 설정한 뒤 enable을 켭니다.
 8. 초기화 시 `0x04`, `0x30`, `0x70`, `0x78`을 모니터링합니다.
 
-## 참조 검증 결과
+## BS25 참조 검증 결과
+
+64바이트 라인·16KiB·2-way를 사용하는 PYNQ-Z2 통합 빌드는 100MHz에서
+LUT 23,733개(44.61%), 레지스터 24,821개, BRAM 21.5/140개(15.36%), DSP 83개를
+사용했습니다. 최종 WNS는 +0.111ns, WHS는 +0.019ns입니다.
+기존 BS24 참조 빌드의 BRAM 사용량은 아래 표의 137.5/140개였습니다.
+
+실제 보드에서 M=16 전체 구면 4220타일(1,098,240바이트 장면)을 읽으며
+약 59.9FPS를 확인했습니다. 이 테스트의 cache hit 비율은 99.86%였으며,
+한 타일의 부분 갱신 8회를 두 DDR 버퍼에 적용하고 주소 전환을 확인했습니다.
+M=32는 전체 구면 패킹만 확인했으며, 실시간 출력 성능을 측정한 결과는 아닙니다.
+원본 수치와 보고서는 통합 저장소의 `verification/results/`에 있습니다.
+
+## BS24 참조 검증 결과
 
 PYNQ-Z2 참조 빌드는 100 MHz에서 다음 결과를 얻었습니다.
 
@@ -335,13 +359,14 @@ AA 픽셀 개수·순서·혼합값 테스트를 통과했습니다. 위 수치�
 - 장면 색상은 RGB332 인덱스와 256-entry 팔레트를 사용합니다.
 - 이 코어는 장면 샘플러·투영기이며, 글꼴·창·일반 2D 도형·카메라 프레임을
   내부에서 렌더링하지 않습니다.
-- BRAM 사용량이 Zynq-7020 한계에 가깝습니다. 더 큰 `M`, 더 많은 활성 장면,
-  추가 버퍼가 필요하면 메모리 구조를 변경해야 할 수 있습니다.
+- BS24는 BRAM 사용량이 Zynq-7020 한계에 가깝습니다. BS25는 셀 데이터를
+  DDR로 옮겼지만, 더 큰 `M`의 합성 비용과 DDR 읽기 성능은 별도 확인이 필요합니다.
 - 한 줄 인과 AA 필터는 대칭 3×3 필터보다 단순하며 고주파 무늬에도 반응할 수
-  있습니다. 기본 설정은 enable, threshold 24, strength 64입니다.
+  있습니다. 기본 설정은 enable, threshold 24, strength 32입니다.
 
 ## 버전 관리
 
-현재 패키지 버전은 `1.0`, core revision은 `25`, runtime signature는
-`0x42533234`입니다. 레지스터 ABI, 장면 메모리 형식, 센서 패킷 형식을
+현재 패키지 버전은 `1.0`, core revision은 `26`, 기본 runtime signature는
+BS25 `0x42533235`입니다. `DDR_CACHE_ENABLE=0`은 BS24 `0x42533234`입니다.
+레지스터 ABI, 장면 메모리 형식, 센서 패킷 형식을
 변경할 때는 패키지 revision을 올리고 이 README에 변경 내용을 기록하십시오.

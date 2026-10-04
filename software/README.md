@@ -9,9 +9,16 @@
   센서 모드 전환, 상태 조회
 - `bosio_geometry_v2.py`: 정이십면체 기준 좌표, 셀/타일 매핑, 수동 Q24
   투영 계수 계산, 장면 메모리 패킹
+- `bosio_buttons.py`: 통합 비트스트림의 버튼 GPIO 접근
 
-Python 3, NumPy, PYNQ가 필요합니다. 두 파일은 같은 디렉토리에 두거나
+Python 3, NumPy, PYNQ가 필요합니다. 세 파일은 같은 디렉토리에 두거나
 이 디렉토리를 `PYTHONPATH`에 추가해야 합니다.
+
+드라이버는 BS24와 BS25를 식별값으로 구분합니다. BS25에서는 DDR 장면
+버퍼를 출력이 끝날 때까지 유지하며, `upload_patch()`가 BPT1을 비활성
+장면에 적용하고 프레임 경계에서 전환합니다. 자세한 버퍼 수명·캐시 설정은
+[캐시 문서](../docs/CACHE_LINE.md)를 참고하세요. `status()`에 캐시 파라미터와
+hit·miss·대기 클럭 정보가 포함됩니다.
 
 ## 기본 사용
 
@@ -80,8 +87,10 @@ driver.upload_words(words)
 
 ## 코어 호환성
 
-드라이버는 bitstream signature `0x42533234`를 확인합니다. `upload_patch()`는
-윈도우 합성기가 만든 `BPT1` 타일 패킷을 양쪽 BRAM bank에 원자적으로 적용합니다.
+드라이버는 BS24 `0x42533234`와 BS25 `0x42533235`를 구분합니다.
+`upload_patch()`는 윈도우 합성기가 만든 `BPT1` 타일 패킷을 받습니다.
+BS24는 양쪽 BRAM 뱅크에 적용하며, BS25는 DDR 장면의 변경 타일을 수정한 뒤
+프레임 경계에서 장면 주소를 전환합니다.
 다른 core
 revision이나 다른 레지스터 ABI를 사용할 때는 드라이버의 signature 검사와
 레지스터 정의를 함께 갱신해야 합니다.
